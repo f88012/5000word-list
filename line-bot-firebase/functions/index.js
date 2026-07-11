@@ -648,12 +648,14 @@ async function getOrFetchCalendarEvents() {
       } else {
         const parsed = parseICalDate(event.start);
         if (!parsed) continue;
+        const endParsed = event.end ? parseICalDate(event.end) : null;
         result.push({
           id: event.isException ? `${safeId}` : (event.uid || event.summary),
           title: event.summary || "無標題",
           start: parsed.dateStr,
           startObj: parsed.dateObj.getTime(),
           end: event.end,
+          endObj: endParsed ? endParsed.dateObj.getTime() : null,
           location: event.location || "",
           description: event.description || "",
           isAllDay: parsed.isAllDay
@@ -921,20 +923,23 @@ async function isSubscribed(userId) {
   }
 }
 
-function formatCalendarEvents(events, label) {
+function formatCalendarEvents(events, label, options = {}) {
   if (!events || events.length === 0) {
     return `📅 ${label}\n\n${label}沒有行程 😊`;
   }
   const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
-  let message = `📅 ${label}行程\n`;
+  const compact = !!options.compact;
+  let message = compact ? `📅 ${label}行程（共 ${events.length} 筆）\n` : `📅 ${label}行程\n`;
   for (const evt of events) {
     // Build date string from evt.start (YYYY-MM-DD) — always reliable, no locale dependency
     let dateStr = evt.start || "日期不詳";
     let weekdayStr = "";
+    let shortDateStr = dateStr;
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
       const [y, m, d] = dateStr.split("-").map(Number);
       const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
       weekdayStr = `(週${WEEKDAYS[wd]})`;
+      shortDateStr = `${String(m).padStart(2, "0")}/${String(d).padStart(2, "0")}`;
       dateStr = `${y}年${String(m).padStart(2, "0")}月${String(d).padStart(2, "0")}日`;
     }
     let startTime, endTime;
@@ -942,23 +947,30 @@ function formatCalendarEvents(events, label) {
       startTime = "全天";
       endTime = "全天";
     } else {
-      // startObj is stored as ms timestamp; getUTC* returns Taiwan time (we stored with +8h or Date.UTC of TW values)
+      // startObj/endObj stored as ms timestamp; getUTC* returns Taiwan time (we stored with +8h or Date.UTC of TW values)
       const ts = evt.startObj instanceof Date ? evt.startObj.getTime() : Number(evt.startObj);
       if (!isNaN(ts) && ts > 0) {
         const td = new Date(ts);
         startTime = `${String(td.getUTCHours()).padStart(2, "0")}:${String(td.getUTCMinutes()).padStart(2, "0")}`;
-        endTime = startTime;
+        const te = evt.endObj instanceof Date ? evt.endObj.getTime() : Number(evt.endObj);
+        endTime = (!isNaN(te) && te > 0) ? `${String(new Date(te).getUTCHours()).padStart(2, "0")}:${String(new Date(te).getUTCMinutes()).padStart(2, "0")}` : startTime;
       } else {
         startTime = "";
         endTime = "";
       }
     }
-    message += `\n📌 ${evt.title}`;
-    const timeLabel = startTime ? `${startTime} - ${endTime}` : "全天";
-    message += `\n🕐 ${dateStr} ${weekdayStr} ${timeLabel}`;
-    if (evt.location) message += `\n📍 ${evt.location}`;
-    if (evt.description) message += `\n📝 ${evt.description}`;
-    message += `\n──────────`;
+    if (compact) {
+      // Single line per event, no location/description, to stay within LINE's 5000-char text limit
+      const compactTime = startTime ? (endTime && endTime !== startTime ? `${startTime}-${endTime}` : startTime) : "全天";
+      message += `\n📌 ${shortDateStr}${weekdayStr} ${compactTime} ${evt.title}`;
+    } else {
+      message += `\n📌 ${evt.title}`;
+      const timeLabel = startTime ? `${startTime} - ${endTime}` : "全天";
+      message += `\n🕐 ${dateStr} ${weekdayStr} ${timeLabel}`;
+      if (evt.location) message += `\n📍 ${evt.location}`;
+      if (evt.description) message += `\n📝 ${evt.description}`;
+      message += `\n──────────`;
+    }
   }
   return message;
 }
@@ -1212,7 +1224,7 @@ async function handleCalendarMessage(userMessage, replyToken, token, userId) {
       await replyLineMessage(replyToken, { type: "text", text: buildCalendarHelpMessage() }, token);
       return;
     }
-    const formattedMessage = formatCalendarEvents(relevantEvents, label);
+    const formattedMessage = formatCalendarEvents(relevantEvents, label, { compact: intent === "month" });
     await replyLineMessage(replyToken, { type: "text", text: formattedMessage }, token);
   } catch (error) {
     console.error("[ERROR] Calendar message handling failed:", error.message);

@@ -53,6 +53,7 @@ function parseIcal(text) {
     else if (line === "END:VEVENT" && cur) { events.push(cur); cur = null; }
     else if (cur) {
       if (line.startsWith("DTSTART")) cur.start = line.substring(line.indexOf(":") + 1).trim();
+      if (line.startsWith("DTEND")) cur.end = line.substring(line.indexOf(":") + 1).trim();
       if (line.startsWith("SUMMARY:")) cur.summary = line.substring(8).replace(/\\n/g, " ").replace(/\\,/g, ",").replace(/\\\\/g, "\\");
       if (line.startsWith("UID:")) cur.uid = line.substring(4).trim();
       if (line.startsWith("LOCATION:")) cur.location = line.substring(9).replace(/\\n/g, "\n").replace(/\\,/g, ",");
@@ -305,12 +306,22 @@ async function main() {
         startObj = new Date(dateStr + "T00:00:00Z").getTime();
         isAllDay = true;
       }
+      let endObj = null;
+      const dtEndMatch = e.end && e.end.match(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})/);
+      if (dtEndMatch) {
+        const [, ey, em, ed, eh, emin, es] = dtEndMatch;
+        const isEndUTC = e.end.includes("Z");
+        endObj = isEndUTC
+          ? new Date(Date.UTC(+ey, +em-1, +ed, +eh, +emin, +es)).getTime() + 8 * 3600000
+          : new Date(Date.UTC(+ey, +em-1, +ed, +eh, +emin, +es)).getTime();
+      }
       allEvents.push({
         id: safeId,
         title: e.summary || "無標題",
         start: dateStr,
         startObj,
         end: e.end || "",
+        endObj,
         location: e.location || "",
         description: e.description || "",
         isAllDay
