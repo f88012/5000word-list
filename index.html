@@ -429,6 +429,8 @@ header{top:52px!important;}
 .announce-secondary{background:none;border:none;color:var(--muted);font-size:0.85rem;padding:6px;cursor:pointer;}
 /* ── 分享例句 Modal ── */
 #exShareModal{position:fixed;inset:0;z-index:620;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.78);backdrop-filter:blur(6px);padding:18px;}
+/* ── 分享做題成果 Modal ── */
+#statsShareModal{position:fixed;inset:0;z-index:620;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.78);backdrop-filter:blur(6px);padding:18px;}
 .exs-box{background:var(--surface);border:1px solid var(--border);border-radius:22px;max-width:400px;width:100%;padding:22px 20px 20px;position:relative;animation:slideUp .24s ease;max-height:92vh;overflow-y:auto;}
 .exs-title{font-family:'Playfair Display',serif;font-size:1.25rem;color:var(--text);margin-bottom:3px;}
 .exs-sub{color:var(--muted);font-size:0.8rem;margin-bottom:14px;}
@@ -5477,21 +5479,26 @@ async function buildStatsShareImage(period){
   ctx.font='500 32px "DM Sans","Noto Sans TC",sans-serif'; ctx.fillStyle='rgba(255,255,255,.75)';
   ctx.fillText(getTWDateDisplay(), W/2, 224);
   // card
-  const cardX=80, cardW=W-160, cardY=540, ch=760;
+  const cardX=80, cardW=W-160, cardY=520, ch=760;
   ctx.fillStyle='#FFFFFF'; ctx.shadowColor='rgba(0,0,0,.28)'; ctx.shadowBlur=44; ctx.shadowOffsetY=18;
   _shRound(ctx,cardX,cardY,cardW,ch,44); ctx.fill(); ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
-  let y = cardY + 108;
+  let y = cardY + 90;
   ctx.fillStyle='#8E8E93'; ctx.font='700 34px "DM Sans","Noto Sans TC",sans-serif';
   ctx.fillText(data.eyebrow, W/2, y);
-  y += 96;
-  ctx.fillStyle='#4361EE'; ctx.font='800 220px "Playfair Display",Georgia,serif';
-  ctx.fillText(String(data.count), W/2, y);
-  y += 70;
+  // 大數字自動縮字級，避免長數字（如本月題數破千）溢出卡片
+  let numFont = 220;
+  const numText = String(data.count), maxNumW = cardW - 160;
+  ctx.font = '800 '+numFont+'px "Playfair Display",Georgia,serif';
+  while(ctx.measureText(numText).width > maxNumW && numFont > 100){ numFont -= 8; ctx.font = '800 '+numFont+'px "Playfair Display",Georgia,serif'; }
+  y += 230;
+  ctx.fillStyle='#4361EE';
+  ctx.fillText(numText, W/2, y);
+  y += 120;
   ctx.fillStyle='#1C1C1E'; ctx.font='600 52px "DM Sans","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
   ctx.fillText(`${data.label}已作答題數`, W/2, y);
-  y += 70;
+  y += 60;
   ctx.strokeStyle='#E5E5EA'; ctx.lineWidth=2; ctx.beginPath();ctx.moveTo(cardX+90,y);ctx.lineTo(cardX+cardW-90,y);ctx.stroke();
-  y += 76;
+  y += 70;
   const chipY = y;
   ctx.font='600 34px "DM Sans","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
   const chip1 = `🔥 連續 ${data.streak} 天`, chip2 = `🎯 正確率 ${data.accPct}%`;
