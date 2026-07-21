@@ -732,6 +732,17 @@ a.drawer-nav-btn{display:flex;color:var(--text);}
 .checkin-like-count{font-size:0.76rem;color:var(--muted);font-weight:600;}
 .checkin-like-btn.liked .checkin-like-count{color:var(--accent2);}
 .checkin-msg{font-size:0.84rem;color:var(--text);line-height:1.5;word-break:break-word;}
+.checkin-photo-row{display:flex;align-items:center;gap:8px;margin-top:8px;}
+.checkin-photo-btn{background:var(--bg);border:1px dashed var(--border);border-radius:8px;padding:6px 10px;font-size:0.72rem;color:var(--muted);cursor:pointer;font-family:inherit;transition:all .15s;}
+.checkin-photo-btn:hover{border-color:var(--accent);color:var(--accent);}
+.checkin-photo-preview{position:relative;display:inline-block;}
+.checkin-photo-preview img{width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--border);display:block;}
+.checkin-photo-remove{position:absolute;top:-6px;right:-6px;background:rgba(0,0,0,.65);color:#fff;border:none;width:20px;height:20px;border-radius:50%;font-size:0.65rem;cursor:pointer;line-height:1;}
+.checkin-post-img{margin-top:8px;max-width:100%;max-height:260px;border-radius:10px;display:block;cursor:pointer;object-fit:cover;}
+#imgViewModal{position:fixed;inset:0;z-index:700;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);padding:20px;}
+#imgViewModal img{max-width:100%;max-height:100%;border-radius:8px;}
+.prog-share-btn{position:relative;display:inline-flex;align-items:center;gap:6px;margin-top:14px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:20px;padding:8px 16px;font-size:0.78rem;font-weight:700;cursor:pointer;font-family:inherit;transition:background .15s;-webkit-tap-highlight-color:transparent;}
+.prog-share-btn:hover{background:rgba(255,255,255,.26);}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
@@ -987,6 +998,22 @@ a.drawer-nav-btn{display:flex;color:var(--text);}
     <!-- ══ 更新紀錄索引 ══ -->
     <div class="news-index-section">
       <div class="news-index-section-title">📋 更新紀錄</div>
+
+      <!-- 2026-07-21 簽到板照片 + 分享做題成果 -->
+      <div class="news-index-entry">
+        <div class="news-index-item" onclick="toggleNewsDetail(this.parentElement)">
+          <span class="news-date">2026-07-21</span>
+          <span class="news-type feature">新功能</span>
+          <span class="ni-title">📷 簽到板可貼照片・📤 分享做題成果</span>
+          <span class="news-arrow">›</span>
+        </div>
+        <div class="news-detail">
+          <ul class="news-list">
+            <li><strong>📷 簽到板貼照片</strong>：進度 Tab「💬 今日簽到板」簽到留言時新增「📷 附加照片」按鈕，可上傳一張照片（自動壓縮），同學留言下方會顯示縮圖，點一下可放大檢視。</li>
+            <li><strong>📤 分享做題成果</strong>：進度 Tab 頂部新增「📤 分享做題成果」按鈕，可選今日／本週／本月做題數，自動生成成果圖卡（含連續打卡天數、正確率），一鍵分享到 IG 限動或下載炫耀 🎉。</li>
+          </ul>
+        </div>
+      </div>
 
       <!-- 2026-07-01 專注時鐘 -->
       <div class="news-index-entry">
@@ -1555,6 +1582,23 @@ a.drawer-nav-btn{display:flex;color:var(--text);}
     <button class="quiz-start-btn" id="exShareGo" onclick="shareExImage()">📤 分享 / 下載</button>
     <div class="exs-hint" id="exShareHint"></div>
   </div>
+</div>
+
+<!-- 分享做題成果 Modal -->
+<div id="statsShareModal" style="display:none" onclick="if(event.target===this)closeStatsShare()">
+  <div class="exs-box">
+    <button class="modal-close" onclick="closeStatsShare()">✕</button>
+    <div class="exs-title">📤 分享做題成果</div>
+    <div class="exs-sub">選擇統計範圍，發到 IG 限動炫耀一下 🎉</div>
+    <div class="exs-preview-wrap"><img id="statsSharePreview" alt="做題成果圖片預覽"></div>
+    <div class="exs-styles" id="statsShareRow"></div>
+    <button class="quiz-start-btn" id="statsShareGo" onclick="shareStatsImage()">📤 分享 / 下載</button>
+  </div>
+</div>
+
+<!-- 通用圖片檢視 -->
+<div id="imgViewModal" style="display:none" onclick="closeImgView()">
+  <img id="imgViewImg" alt="">
 </div>
 
 <!-- 專注時鐘 Modal -->
@@ -3065,6 +3109,7 @@ function renderProgress(){
           <span class="prog-hero-chip">🎯 正確率 ${accPct}%</span>
           <span class="prog-hero-chip">📈 下個目標 ${milestone}</span>
         </div>
+        <button class="prog-share-btn" onclick="openStatsShare()">📤 分享做題成果</button>
       </div>
       <div class="stat-cards">
         <div class="stat-card sc-blue">
@@ -3146,7 +3191,11 @@ function renderCheckinBoard(posts, user){
   const myPost = user ? posts.find(p => p.uid === user.uid) : null;
   let inputHtml = '';
   if(user){
+    _checkinImage = myPost && myPost.img ? myPost.img : null;
     const initVal = myPost ? _escH(myPost.text) : '';
+    const photoRowHtml = _checkinImage
+      ? `<div class="checkin-photo-preview"><img id="checkinPhotoPreviewImg" src="${_checkinImage}"><button class="checkin-photo-remove" onclick="removeCheckinImage()">✕</button></div>`
+      : `<button class="checkin-photo-btn" onclick="document.getElementById('checkinFileInput').click()">📷 附加照片</button>`;
     inputHtml = `
       <div class="checkin-input-area">
         <textarea id="checkinTextarea" class="checkin-textarea" maxlength="80" placeholder="今天的學習目標或心情…">${initVal}</textarea>
@@ -3154,6 +3203,8 @@ function renderCheckinBoard(posts, user){
           <span id="checkinCharCount" class="checkin-char-count">${myPost ? myPost.text.length : 0}/80</span>
           <button class="checkin-submit-btn" onclick="submitCheckin()">${myPost ? '更新' : '簽到'}</button>
         </div>
+        <div class="checkin-photo-row" id="checkinPhotoRow">${photoRowHtml}</div>
+        <input type="file" id="checkinFileInput" accept="image/*" style="display:none" onchange="onCheckinFilePick(event)">
       </div>`;
   } else {
     inputHtml = `<div class="checkin-login-hint">請<button class="checkin-login-btn" onclick="fbGoogleSignIn()">登入 Google 帳號</button>以簽到留言</div>`;
@@ -3171,6 +3222,9 @@ function renderCheckinBoard(posts, user){
         const likeBtnHtml = isMe
           ? `<div style="width:44px"></div>`
           : `<button class="checkin-like-btn${liked?' liked':''}" onclick="toggleCheckinLike('${_escH(p.uid)}')">${liked?'❤️':'🤍'}<span class="checkin-like-count">${likeCount||''}</span></button>`;
+        const imgHtml = p.img
+          ? `<img class="checkin-post-img" src="${_escH(p.img)}" onclick="openImgView('${_escH(p.img)}')" onerror="this.style.display='none'">`
+          : '';
         return `<div class="checkin-post">
           <div class="checkin-post-top">
             ${avatarHtml}
@@ -3181,6 +3235,7 @@ function renderCheckinBoard(posts, user){
             ${likeBtnHtml}
           </div>
           <div class="checkin-msg">${_escH(p.text)}</div>
+          ${imgHtml}
         </div>`;
       }).join('');
   el.innerHTML = `
@@ -3193,6 +3248,46 @@ function renderCheckinBoard(posts, user){
   const ta = el.querySelector('#checkinTextarea');
   const cc = el.querySelector('#checkinCharCount');
   if(ta && cc) ta.addEventListener('input', () => { cc.textContent = ta.value.length + '/80'; });
+}
+
+/* ── 簽到板照片附件 ── */
+let _checkinImage = null;   // 壓縮後的 dataURL（含圖才有值）
+function onCheckinFilePick(e){
+  const f = e.target.files && e.target.files[0];
+  if(f) _compressCheckinImage(f);
+}
+function _compressCheckinImage(fileOrBlob){
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 640;
+      let w = img.width, h = img.height;
+      if(w > max){ h = Math.round(h * max / w); w = max; }
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(img, 0, 0, w, h);
+      _checkinImage = cv.toDataURL('image/jpeg', 0.7);
+      const row = document.getElementById('checkinPhotoRow');
+      if(row) row.innerHTML = `<div class="checkin-photo-preview"><img id="checkinPhotoPreviewImg" src="${_checkinImage}"><button class="checkin-photo-remove" onclick="removeCheckinImage()">✕</button></div>`;
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(fileOrBlob);
+}
+function removeCheckinImage(){
+  _checkinImage = null;
+  const fi = document.getElementById('checkinFileInput'); if(fi) fi.value = '';
+  const row = document.getElementById('checkinPhotoRow');
+  if(row) row.innerHTML = `<button class="checkin-photo-btn" onclick="document.getElementById('checkinFileInput').click()">📷 附加照片</button>`;
+}
+function openImgView(src){
+  document.getElementById('imgViewImg').src = src;
+  document.getElementById('imgViewModal').style.display = 'flex';
+}
+function closeImgView(){
+  document.getElementById('imgViewModal').style.display = 'none';
+  document.getElementById('imgViewImg').src = '';
 }
 
 async function submitCheckin(){
@@ -3213,6 +3308,7 @@ async function submitCheckin(){
         name:  user.displayName || userProfile?.name || '匿名',
         photo: user.photoURL || '',
         text,
+        img:   _checkinImage || '',
         ts:    firebase.firestore.FieldValue.serverTimestamp()
       });
     } else {
@@ -3221,6 +3317,7 @@ async function submitCheckin(){
         name:  user.displayName || userProfile?.name || '匿名',
         photo: user.photoURL || '',
         text,
+        img:   _checkinImage || '',
         ts:    firebase.firestore.FieldValue.serverTimestamp(),
         likes: {}
       });
@@ -5314,6 +5411,130 @@ async function shareExImage(){
     alert('分享失敗：'+(e.message||e));
   }finally{
     btn.disabled=false; btn.textContent=orig;
+  }
+}
+
+/* ── 分享做題成果（今日/本週/本月）到 IG 限動 ── */
+const STATS_SHARE_PERIODS = [
+  { key:'day',   label:'今天' },
+  { key:'week',  label:'本週' },
+  { key:'month', label:'本月' }
+];
+let _statsSharePeriod = 'day', _statsShareFile = null, _statsPreviewUrl = null;
+
+function _statsShareData(period){
+  const s   = getStreakData();
+  const acc = JSON.parse(localStorage.getItem(ACCURACY_KEY) || '{"correct":0,"total":0}');
+  const accPct = acc.total > 0 ? Math.round(acc.correct/acc.total*100) : 0;
+  const map = {
+    day:   { count: getDailyData().count,        label:'今日',   eyebrow:'TODAY'  },
+    week:  { count: userStats.weeklyReviews  || 0, label:'本週',  eyebrow:'THIS WEEK' },
+    month: { count: userStats.monthlyReviews || 0, label:'本月',  eyebrow:'THIS MONTH' }
+  };
+  const d = map[period] || map.day;
+  return { count: d.count, label: d.label, eyebrow: d.eyebrow, streak: s.streak, accPct };
+}
+
+function openStatsShare(){
+  document.getElementById('statsShareRow').innerHTML = STATS_SHARE_PERIODS.map((p,i) =>
+    `<button class="exs-style-btn${p.key===_statsSharePeriod?' active':''}" onclick="setStatsSharePeriod('${p.key}')"><div class="exs-style-name">${p.label}</div></button>`).join('');
+  document.getElementById('statsShareModal').style.display = 'flex';
+  refreshStatsPreview();
+}
+function closeStatsShare(){ document.getElementById('statsShareModal').style.display = 'none'; }
+function setStatsSharePeriod(key){
+  _statsSharePeriod = key;
+  document.querySelectorAll('#statsShareRow .exs-style-btn').forEach(b => {
+    b.classList.toggle('active', b.textContent.trim() === (STATS_SHARE_PERIODS.find(p=>p.key===key)||{}).label);
+  });
+  refreshStatsPreview();
+}
+async function refreshStatsPreview(){
+  const blob = await buildStatsShareImage(_statsSharePeriod);
+  if(!blob) return;
+  if(_statsPreviewUrl) URL.revokeObjectURL(_statsPreviewUrl);
+  _statsPreviewUrl = URL.createObjectURL(blob);
+  document.getElementById('statsSharePreview').src = _statsPreviewUrl;
+  _statsShareFile = new File([blob], `做題成果-${_statsSharePeriod}.png`, {type:'image/png'});
+}
+async function buildStatsShareImage(period){
+  try{ if(document.fonts && document.fonts.ready) await document.fonts.ready; }catch(e){}
+  const data = _statsShareData(period);
+  const cv = document.getElementById('shareCanvas'); const W=1080,H=1920; cv.width=W; cv.height=H;
+  const ctx = cv.getContext('2d');
+  ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetX=0; ctx.shadowOffsetY=0;
+  ctx.clearRect(0,0,W,H);
+  const g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,'#1E1B4B'); g.addColorStop(0.48,'#3730A3'); g.addColorStop(1,'#4361EE');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(247,37,133,.28)';
+  ctx.beginPath(); ctx.arc(910,240,260,0,7); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.06)';
+  ctx.beginPath(); ctx.arc(140,1700,300,0,7); ctx.fill();
+  // header
+  ctx.textAlign='center';
+  ctx.font='700 36px "DM Sans","Noto Sans TC",sans-serif'; ctx.fillStyle='rgba(255,255,255,.92)';
+  ctx.fillText('📊 學習成果 · STUDY REPORT', W/2, 175);
+  ctx.font='500 32px "DM Sans","Noto Sans TC",sans-serif'; ctx.fillStyle='rgba(255,255,255,.75)';
+  ctx.fillText(getTWDateDisplay(), W/2, 224);
+  // card
+  const cardX=80, cardW=W-160, cardY=540, ch=760;
+  ctx.fillStyle='#FFFFFF'; ctx.shadowColor='rgba(0,0,0,.28)'; ctx.shadowBlur=44; ctx.shadowOffsetY=18;
+  _shRound(ctx,cardX,cardY,cardW,ch,44); ctx.fill(); ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+  let y = cardY + 108;
+  ctx.fillStyle='#8E8E93'; ctx.font='700 34px "DM Sans","Noto Sans TC",sans-serif';
+  ctx.fillText(data.eyebrow, W/2, y);
+  y += 96;
+  ctx.fillStyle='#4361EE'; ctx.font='800 220px "Playfair Display",Georgia,serif';
+  ctx.fillText(String(data.count), W/2, y);
+  y += 70;
+  ctx.fillStyle='#1C1C1E'; ctx.font='600 52px "DM Sans","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
+  ctx.fillText(`${data.label}已作答題數`, W/2, y);
+  y += 70;
+  ctx.strokeStyle='#E5E5EA'; ctx.lineWidth=2; ctx.beginPath();ctx.moveTo(cardX+90,y);ctx.lineTo(cardX+cardW-90,y);ctx.stroke();
+  y += 76;
+  const chipY = y;
+  ctx.font='600 34px "DM Sans","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif';
+  const chip1 = `🔥 連續 ${data.streak} 天`, chip2 = `🎯 正確率 ${data.accPct}%`;
+  const c1w = ctx.measureText(chip1).width + 48, c2w = ctx.measureText(chip2).width + 48;
+  const gap = 20, totalW = c1w + c2w + gap, startX = W/2 - totalW/2;
+  ctx.fillStyle='rgba(67,97,238,.1)'; _shRound(ctx, startX, chipY, c1w, 68, 20); ctx.fill();
+  ctx.fillStyle='rgba(247,37,133,.1)'; _shRound(ctx, startX+c1w+gap, chipY, c2w, 68, 20); ctx.fill();
+  ctx.fillStyle='#3A3A3C';
+  ctx.fillText(chip1, startX + c1w/2, chipY+46);
+  ctx.fillText(chip2, startX+c1w+gap + c2w/2, chipY+46);
+  // footer
+  ctx.textAlign='center';
+  ctx.fillStyle='rgba(255,255,255,.95)'; ctx.font='700 36px "DM Sans","Noto Sans TC",sans-serif';
+  ctx.fillText('📚 5000英文單字學習', W/2, H-150);
+  ctx.fillStyle='rgba(255,255,255,.6)'; ctx.font='500 28px "DM Sans",sans-serif';
+  ctx.fillText('wisdomenglish.github.io/5000word-list', W/2, H-100);
+  return await new Promise(res => cv.toBlob(b => res(b), 'image/png', 0.95));
+}
+async function shareStatsImage(){
+  const btn = document.getElementById('statsShareGo'); const orig = btn.textContent;
+  const data = _statsShareData(_statsSharePeriod);
+  try{
+    if(_statsShareFile && navigator.canShare && navigator.canShare({files:[_statsShareFile]})){
+      await navigator.share({files:[_statsShareFile], title:'學習成果', text:`我${data.label}已經作答 ${data.count} 題！💪`});
+      return;
+    }
+    btn.disabled = true; btn.textContent = '產生圖片中…';
+    const blob = await buildStatsShareImage(_statsSharePeriod);
+    if(!blob) throw new Error('無法產生圖片');
+    const file = new File([blob], `做題成果-${_statsSharePeriod}.png`, {type:'image/png'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:'學習成果', text:`我${data.label}已經作答 ${data.count} 題！💪`});
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download=file.name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 1000);
+      alert('已下載圖片 📥\n可到 Instagram / Facebook 發佈限時動態或貼文！');
+    }
+  }catch(e){
+    if(e && e.name==='AbortError') return;
+    alert('分享失敗：'+(e.message||e));
+  }finally{
+    btn.disabled = false; btn.textContent = orig;
   }
 }
 

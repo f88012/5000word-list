@@ -27,7 +27,7 @@
 - [vocabulary-data.js](vocabulary-data.js) — 外部單字庫（4,549 字，格式：`{w, z, p}`；2026-06-11 由 4,391 擴充至 5,565 後，2026-06-12 精簡純變化形回 4,549，並 AI 校正中文釋義標點，保留原形＋真形容詞/獨立詞）
 - [phrases-data.js](phrases-data.js) — 外部片語庫（1,125 條，格式：`{p, z}`）
 - [manifest.json](manifest.json) — PWA 設定（name: 5000英文單字學習）
-- [sw.js](sw.js) — Service Worker，支援離線使用（目前版本：`vocab-app-v95`）
+- [sw.js](sw.js) — Service Worker，支援離線使用（目前版本：`vocab-app-v109`）
 - [icon-192.png](icon-192.png) / [icon-512.png](icon-512.png) — Wisdom logo 圖示
 
 ### 功能
@@ -222,6 +222,24 @@
   - **iOS gesture**：`refreshExPreview()` 每次切風格就預先產生 `_exShareFile`，`shareExImage()` 才能同步呼叫 `navigator.share({files})`
   - 共用 `#shareCanvas`、`_shWrap`/`getTWDateDisplay`；例句來源讀 `localStorage['vocab_wotd_ex_'+word]`
 
+### 每日簽到板架構（進度 Tab）
+
+- 進度 Tab 排行榜下方 `#checkinBoard`（`renderProgress()` 內呼叫 `loadCheckins()`）；資料存 Firestore `checkins/{today}/posts/{uid}`，`today` 為 `getTodayTW()`（台灣時區 `YYYY-MM-DD`），每天台灣時間 00:00 自然換新集合等於重置
+- `loadCheckins()` 用 `onSnapshot` 即時監聽當日 `posts`（依 `ts` 排序），有變動就整段重繪 `renderCheckinBoard()`——**注意**：任何人簽到都會觸發全體重繪，若使用者正在輸入中的文字/照片尚未送出會被重置（既有限制，非本次新增功能引入）
+- 登入才能簽到，`submitCheckin()` 寫入 `{uid, name, photo(大頭貼), text, img, ts, likes:{}}`（`img` 為 2026-07-21 新增欄位，見下）；已簽到過則走 `update`（按鈕文字變「更新」）
+- 按讚：`toggleCheckinLike(authorUid)` 寫 `likes.{uid}=true`／刪除該欄位；自己的留言不顯示讚按鈕
+- **📷 貼照片（2026-07-21 新增）**：textarea 下方「📷 附加照片」按鈕 → `onCheckinFilePick()` → `_compressCheckinImage()`（壓成寬 ≤640px 的 JPEG q0.7 dataURL，存全域 `_checkinImage`）→ 預覽縮圖 + ✕ 移除鈕（`removeCheckinImage()`）。`submitCheckin()` 一併把 `_checkinImage` 存進該篇 post 的 `img` 欄位（Firestore 單一文件內，未使用 Firebase Storage）
+  - 編輯已簽到留言時，`renderCheckinBoard()` 會把 `_checkinImage` 初始化為 `myPost.img`，所以重新打開簽到板會看到自己原本貼的照片
+  - 其他同學的留言若有 `img`，卡片內顯示 `.checkin-post-img` 縮圖，點擊呼叫共用的 `openImgView(src)` 全螢幕檢視（`#imgViewModal`，任何頁面要放大看圖都可重用這個 helper）
+
+### 分享做題成果架構（進度 Tab，2026-07-21）
+
+- 進度頁 `.prog-hero` 內新增「📤 分享做題成果」按鈕（`openStatsShare()`），彈出 `#statsShareModal`（沿用每日一字分享例句的 `.exs-box`/`.exs-preview-wrap`/`.exs-styles` 樣式）
+- 三個統計範圍 `STATS_SHARE_PERIODS`（今天/本週/本月）→ `setStatsSharePeriod(key)` 切換並呼叫 `refreshStatsPreview()` 即時重畫預覽
+- 數字來源：今天＝`getDailyData().count`（`vocab_daily`）、本週／本月＝`userStats.weeklyReviews`／`userStats.monthlyReviews`（`vocab_stats`，見「Stats & Leaderboard」）；額外帶入 `getStreakData().streak` 與 `ACCURACY_KEY` 正確率一起畫進圖卡
+- `buildStatsShareImage(period)`：沿用每日一字分享共用的隱藏 `#shareCanvas`（1080×1920）、`_shRound`/`_shWrap` helper，畫深藍→紫→藍漸層底（與 `.prog-hero` 同色系）+ 白卡大數字 + 連續打卡/正確率兩顆膠囊 + 品牌頁尾
+- `shareStatsImage()`：`refreshStatsPreview()` 已預先產生 `_statsShareFile`，故能同步呼叫 `navigator.share({files})` 保留 iOS user-gesture；不支援檔案分享則 fallback 下載 PNG
+
 ### 字典頁連續播放（2026-06-25）
 
 - 字典頁統計列（`#statsBar`）右側 `#playAllBtn`（`playAllWords()`）：依目前篩選清單 `filtered`（字母/級別/搜尋皆通用）一字一字連續朗讀
@@ -241,9 +259,11 @@
 ### 更新公告頁
 
 - 公告從底部導覽移除，改為從側邊欄 ☰ 進入，對應 `#newsSection`（`switchTab('news')`）
-- 在 `#newsSection` 內以 `<div class="news-card">` 為單位手動維護
-- 每則公告結構：日期、分類徽章（`feature`/`fix`/`improve`）、標題、`<ul class="news-list">` 條列
-- 新增公告：在 `newsSection` 最上方複製一個 `news-card` div，修改日期與內容即可
+- 兩種卡片格式並存：
+  - **置頂使用技巧**（`.news-pinned-label` 區塊）：`<div class="news-card">` 直接展開顯示，不可折疊，目前只有「加入主畫面」「雲端同步」兩則長期置頂內容
+  - **一般更新紀錄**（`.news-index-section` 區塊，**新公告都加在這裡**）：`<div class="news-index-entry">` 包 `.news-index-item`（`onclick="toggleNewsDetail(this.parentElement)"`，含日期＋分類徽章＋`.ni-title`＋展開箭頭）+ `.news-detail`（`<ul class="news-list">`，預設收合，點頭部展開）
+- 分類徽章（`.news-type`）：`feature`（新功能）/`fix`（修正）/`improve`（優化），同一則可疊多個
+- **新增公告**：在 `.news-index-section-title`（📋 更新紀錄）正下方複製一個 `.news-index-entry` 區塊貼最上方（最新在最上），修改日期／徽章／`.ni-title`／`.news-detail` 內文即可，不需改 JS
 
 ### 本地測試
 
@@ -452,7 +472,9 @@ Bot 透過 `event.destination`（LINE User ID）自動識別並套用對應憑�
 - **⚠️ 命名陷阱**：Bot 2 的程式 config `name` 仍是 `Ivy's English Calendar`，但它在 LINE 的**顯示名稱是「Wisdom Assistant」**，也是**問題回報的收件 bot**（不是 Bot 3）。Bot 3 才是「Wisdom AI Teacher」。談「Wisdom Assistant」時指的是 Bot 2。
 - **問題回報指令（任何 bot 皆可）**：傳「綁定回報」→ `handleReportBind` 把該 userId + 綁定當下的 `tokenEnvVar` 存入 `/report-recipients`；傳「解除回報」移除。webhook 文字分派在最前面攔截這兩個指令（早於行事曆 / rewrite 分支）。詳見 PWA「問題回報架構」
 
-### 環境變數（firebase.json 內硬編碼）
+### 環境變數
+
+**⚠️ 實際部署讀取來源是 `functions/.env`（`firebase deploy` log 會印「Loaded environment variables from .env.」），不是 `firebase.json` 的 `environmentVariables` 欄位！** 兩邊目前內容重複維護，新增/修改環境變數時**兩個檔案都要改**，只改 firebase.json 部署後函式讀不到值（曾在 2026-07-20 新增 `NOTION_TOKEN` 時踩到，只改 firebase.json 導致 deploy 完仍讀不到，補上 `.env` 重 deploy 才生效）。`functions/.env` 已 git ignore，不會進版控。
 
 | 變數 | 用途 |
 |------|------|
@@ -464,6 +486,7 @@ Bot 透過 `event.destination`（LINE User ID）自動識別並套用對應憑�
 | `LINE_CHANNEL_ACCESS_TOKEN_BOT3` | Bot 3 傳訊 |
 | `ANTHROPIC_API_KEY` | Claude API |
 | `GOOGLE_CALENDAR_ICAL_URL` | Ivy's English Google 日曆 iCal |
+| `NOTION_TOKEN` | Bot 2 素材庫功能，Notion internal integration token |
 
 ### 常用指令
 
@@ -510,6 +533,9 @@ node line-bot-firebase/setup-rich-menu.js
 - **未識別輸入**：立即回傳使用說明（不進入行事曆 fetch，避免 replyToken 過期）
 - **⚠️ Cloud Run 限制**：Cloud Run IP 被 Google 封鎖，無法直接抓 Google Calendar iCal（返回「Sorry...」頁面）。解決方案：由本機 `trigger-reminder.js` 抓取並寫入 Firebase 快取；Cloud Function 只讀快取，不直接抓 iCal
 - **「重新整理」指令**：改為軟清除（只過期 timestamp，不刪資料），若 Cloud Run 抓取失敗自動 fallback 舊快取並顯示 ⚠️ 提示，此時需本機執行 `node trigger-reminder.js`
+- **Notion 素材庫串接（2026-07-20）**：老師傳純網址（含 `http(s)://` 的訊息）→ `handleContentIntake` 自動在 Notion「新聞素材庫 Content Intake」建立頁面（狀態 Not started）。抓網頁 `og:title`/`<title>` 當標題（抓不到 fallback 網址，用 `decodeHtmlEntities` 解 HTML entity 避免 `&#x27;` 這種亂碼進 Notion）、依網域比對 `NOTION_SOURCE_SITE_MAP` 判斷「來源網站」（BBC/CNN/VOA/The Guardian/NPR/Live Science/Taipei Times/New York Times/Focus Taiwan，比對不到固定填「其他」；**select 選項名稱要跟 Notion 裡的一字不差**，之前錯用「Guardian/NYT」踩過 400，已修正）。`data_source_id` 固定 `2e55907b-14d0-4400-9f79-93b4b99532d3`（硬編碼於 `NOTION_CONTENT_DATA_SOURCE_ID`）。**Token**：`functions/.env` 的 `NOTION_TOKEN` 才是實際部署讀取的來源（見上方環境變數章節），`firebase.json` 那份只是備份用途。此判斷**只套用在 Bot 2**（`botConfig.role === "calendar"`，LINE 顯示名稱「Wisdom Assistant」）；判斷順序在「綁定回報/解除回報」之後、一般行事曆意圖之前。**Rich Menu** 上排新增第三格「📰 素材庫」（`setup-rich-menu.js`，`message` action 傳「素材庫」→ `content_intake_help` 意圖回覆使用說明，實際建立仍靠老師直接貼網址觸發，選單按鈕本身無法代傳網址）；上排從 2 格 1250px 改為與下排一致的 3 欄 833/834/833px 版面，改完需重跑 `node setup-rich-menu.js` 才會套用到 LINE
+- **文章標準化自動化 STEP2（2026-07-20）**：Content Intake 頁面狀態改成 `In progress`（沿用既有三態 `Not started/In progress/Done`，未新增選項）→ `standardizeArticles` 排程函式（`onSchedule`，每 15 分鐘，`Asia/Taipei`）輪詢 `queryPendingStandardization` 抓到後：讀該頁「CEFR預估」select 當目標等級（沒填預設 B1）→ `fetchArticleFullText` 抓網頁純文字（去 script/style/tag）→ `standardizeArticleWithClaude` 用 Claude（`ANTHROPIC_API_KEY_PWAPROD`）依 `CEFR_WORD_COUNT_TABLE`（A2 200±20／B1 230±20／B2 280±40／C1 330±30／C2 360±40，2026-07-20 由老師拍板）改寫並自評 unknown words %（**不是**查 5000單字庫算的——實測過 5000單字庫是「值得學的進階字表」，缺 the/team/game 這類基礎字，拿來算 unknown 會嚴重灌水到 97%+，已改回讓 Claude 自己判斷）→ 本地算字數/平均句長（`computeWordCount`/`computeAvgSentenceLength`）→ 三項都在 `CEFR_QUALITY_THRESHOLD` 門檻內才勾 `Ready for Questions`→ 寫入 Standardized Articles（`data_source_id: 59cfc5c8-3b12-4429-b0ec-f576abdbed4e`，該 data source 的 schema **不要相信 `GET /v1/data_sources/{id}` 回傳**——2026-07-20 實測那支 API 回傳的 9 個屬性是舊快取，漏了「相關題目/Exam Style/Difficulty Profile」3 個關聯欄位，要抓單一頁面 `GET /v1/pages/{id}` 才看得到完整 12 個屬性；本次寫入只填會用到的 9 個，其餘 3 個關聯留空跟現有範例文章一致）→ 「原始素材」relation 指回 Content Intake 頁（此欄是 dual_property，跟 Content Intake 的「標準化文章」自動雙向同步，不用另外寫）→ **同時依 `CEFR_DIFFICULTY_PROFILE_PAGE_ID` 自動綁定對應的 Difficulty Profile relation**（2026-07-20 補上，取代原本手冊講的 STEP3a 人工綁定，因為 CEFR 是 STEP2 當下就決定好的資訊，不需要人再判斷一次；Exam Style 仍手動綁，因為要不要對應特定考試是人的判斷）→ Content Intake 狀態改 `Done`。失敗時該頁狀態退回 `In progress` 並把錯誤訊息寫進「備註」（不會卡死重跑迴圈，但也不會自動消失，需人工排除）。完成後會 push 結果摘要給 `/report-recipients`（沿用「綁定回報」機制，不用另外設定收件人）
+- **出題自動化 STEP4-6（2026-07-20）**：架構是「三軸模型」——Difficulty Profile（純CEFR）+ Exam Style（考試風格，可留空=通用）+ Question Blueprint（題型，與難度/考試無關）→ Final Prompt。**綁定位置不同層**：Difficulty Profile／Exam Style 綁在 Standardized Articles（文章層）；Question Blueprint 綁在 Question Bank 的每一題（題目層），不是三個都掛文章上（手冊原文沒寫清楚，實測 schema 才確認）。舊的「Blueprint 出題規格庫」已停用不用管。觸發時機：`generateQuestions` 排程函式（同樣每 15 分鐘）輪詢 Standardized Articles，條件 `Ready for Questions=✓` 且 `Difficulty Profile` 已綁（STEP2 現在會自動綁，見上）且 `相關題目` 還是空的（`相關題目`跟 Question Bank 的「文章」欄位是 dual_property，寫一題就會自動非空，天然防止同一篇被重複處理，不用另外開狀態欄位）。抓到後：`fetchActiveQuestionBlueprint` 抓狀態=使用中的 Question Blueprint（目前只有一筆「Reading Comprehension」）→ 組 Final Prompt（文章內容 + Difficulty Profile 的閱讀目標/詞彙難度/文法複雜度等 + 有綁 Exam Style 才加考試風格段落 + Blueprint 的 Prompt Body/題目結構/答案排序規則 + 三個 Prompt Components：干擾項設計原則/輸出格式要求/QA檢查規則，另外「出題理由與子技能標記（通用）」這個 component 沒被 Blueprint 的 relation 連結、固定用 `OUTPUT_REASONING_COMPONENT_ID` 引用）→ 呼叫 Claude 出題（CEFR=A2 只出 3 題型 Main Idea/Detail/Vocabulary in Context，B1 以上出完整 5 題型 Main Idea/Detail/Inference/Vocabulary in Context/Author Attitude，這規則抄自 Question Blueprint 的「備註」欄）→ **QA 用第二次獨立的 Claude 呼叫**做（不是同一次生成時自評，讓它用新的角度審查），依 QA 標準逐題判 pass/fail → 全部題目（不管 QA 有沒有過）都寫入 Question Bank，`Verified` 依 QA 結果設 true/false（手冊原文寫「未通過不得進入題庫」，但完全不寫會讓 `相關題目` 一直空著、排程無限重試同一篇文章，所以改成「寫入但標記未驗證，留給人工複核」）。5 個相關資料庫 data_source_id：Question Bank `1c557006-885d-40b8-bd3e-3b08bd47b8dc`／Question Blueprint `57819685-d6da-4129-826a-39957418b65e`／Difficulty Profile `00747a2e-8999-4400-ba30-92593ea84dc3`／Exam Style `1697ffde-10f4-410b-83a9-bd2002699d1e`／Prompt Components `8bf5672e-83a2-4d39-851e-588dfaead2b0`。目前只支援單一 Question Blueprint（取狀態=使用中的第一筆），多 Blueprint 選擇邏輯還沒做
 
 **Bot 3（Wisdom AI Teacher）：**
 - 英文教學功能與 Bot 1 相同（vocabulary、grammar、error_correction、essay_review、translation）
@@ -812,7 +838,7 @@ python3 -m notebooklm login
 - **Cloud Function 架構**：每個 export 函式自帶 `require('@anthropic-ai/sdk')` 和 client 實例，不依賴模組頂層共用物件（避免 Cloud Run 作用域問題）
 - **generateVocabQuiz max_tokens**：必須設為 `4096`（非 1024），10 道題目的 JSON 約需 2500–3000 tokens，1024 會截斷 → `Unexpected end of JSON input` → 500 錯誤
 - **generateVocabQuiz 共享題庫快取（2026-06-12，省 token）**：出題前先用 `quizCacheKey(word)`（小寫、非英數轉 `_`）查 Firebase Realtime DB `/quiz-cache/{key}`，只對「未快取」的單字呼叫 Claude，生成後寫回；跨所有學生每個單字題目只生成一次，命中快取 0 token、約 9 倍快。`initializeFirebase()` 取得 `dbRef`；Firebase 連不上時 fallback 為原本即時生成（不會壞）。回傳依原請求順序合併「快取 + 新生成」。無 TTL（句子不會過期）。若日後啟用 `cefrLevel`，key 會加 `__{cefr}` 後綴避免混用。客戶端 `QUIZ_FN_URL` 打的是 base `generateVocabQuiz`（非 V2/V3）
-- **Service Worker 快取版本**：更動 `index.html` 或 `vocabulary-data.js` 需同步升版 `sw.js` 的 `CACHE` 常數（目前 `vocab-app-v95`），否則舊使用者看不到更新
+- **Service Worker 快取版本**：更動 `index.html` 或 `vocabulary-data.js` 需同步升版 `sw.js` 的 `CACHE` 常數（目前 `vocab-app-v109`），否則舊使用者看不到更新
 - **檔案編碼**：`functions/index.js` 和 `package.json` 必須存為 UTF-8（無 BOM），Windows PowerShell redirect 可能產生 UTF-16 BOM 導致部署失敗
 - **行事曆 iCal 日期格式化**：`formatCalendarEvents` 使用 `evt.start`（YYYY-MM-DD 字串）手動格式化日期，不使用 `toLocaleDateString`（Cloud Run 環境下對 Invalid Date 輸出字串 "Invalid Date"）；`startObj` 存為毫秒 timestamp（`getTime()`），用 `getUTC*` 方法讀取時間
 - **iCal 折疊（folding）**：iCal 超過 75 字元的行會折疊（`CRLF + 空格`），解析前必須先 unfolding（`icalText.replace(/\r\n[ \t]/g, "")...`），否則長標題（如 `[Sammy, Frank, Ivy] 考猜試教@ 府中`）會被截斷、名字解析失敗
