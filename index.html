@@ -3525,9 +3525,7 @@ async function startQuiz(){
   if(qPrioritizeUnfamiliar){
     selected=_sortByMastery(pool, getMastery()).slice(0,aiCap);
   } else {
-    const unfPart=pool.filter(w=>markedWords.has(w.word)).sort(()=>Math.random()-.5);
-    const othPart=pool.filter(w=>!markedWords.has(w.word)).sort(()=>Math.random()-.5);
-    selected=[...unfPart,...othPart].slice(0,aiCap);
+    selected=[...pool].sort(()=>Math.random()-.5).slice(0,aiCap);
   }
 
   if(qMode==='meaning'){
