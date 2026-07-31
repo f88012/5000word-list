@@ -29,5 +29,11 @@ service cloud.firestore {
       );
       allow delete: if request.auth != null && request.auth.uid == postId;
     }
+
+    // permanent-checkins — 簽到板永久保留照片（公開讀；本人建立/更新/刪除）
+    match /permanent-checkins/{userId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
   }
 }
