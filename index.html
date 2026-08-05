@@ -2787,13 +2787,20 @@ function goPhrasePage(n){ phrasePage = n; window.scrollTo({top: 0, behavior: 'sm
 const QUIZ_FN_URL = 'https://generatevocabquiz-gtlccx6nka-uc.a.run.app';
 const PHRASE_QUIZ_FN_URL = 'https://generatephrasequiz-gtlccx6nka-uc.a.run.app';
 /* 驗證句子填空題：正解選項必須等於被考單字，否則視為壞題（回 null）→ 重新抓題覆蓋。
-   解決 Claude 把正解換成同義詞（考 familiar 卻用 well-known）導致詳解的字不在選項。*/
+   解決 Claude 把正解換成同義詞（考 familiar 卻用 well-known）導致詳解的字不在選項。
+   也會擋掉選項重複（如 A/C 兩個都是同一個字）的壞題，避免測驗出現重複選項。*/
 function _fixQuizQ(q){
   if(!q||typeof q!=='object'||!q.word||!Array.isArray(q.options)||q.options.length<2) return null;
   if(typeof q.sentence!=='string'||!q.sentence.includes('______')) return null;
   const norm=s=>String(s).toLowerCase().trim();
   const idx=q.options.findIndex(o=>norm(o)===norm(q.word));
   if(idx===-1) return null;          // 正解單字不在選項裡 → 壞題，丟棄
+  const seen=new Set();
+  for(const o of q.options){
+    const n=norm(o);
+    if(seen.has(n)) return null;     // 選項重複 → 壞題，丟棄
+    seen.add(n);
+  }
   q.answer=idx;                       // 順手修正 shuffle 後 index 不一致
   return q;
 }
